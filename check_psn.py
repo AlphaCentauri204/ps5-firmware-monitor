@@ -4,6 +4,7 @@ import datetime
 import requests
 import xml.etree.ElementTree as ET
 
+# Set to "13.20" to test revocation alert, or "13.60" for real tracking
 TARGET_FW = "13.20"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -40,27 +41,44 @@ def get_latest_ofw():
 
 def main():
     latest_ofw = get_latest_ofw()
+    
+    # Firmwares that currently have PSN access
     alive_fws = ["13.60", latest_ofw]
+    
+    # Dynamic check: Is our target firmware actually alive?
+    is_alive = TARGET_FW in alive_fws
 
-    # 1. Manual check (instant reply whenever you click "Run workflow")
+    # 1. Manual Check (when you tap "Run workflow")
     if GITHUB_EVENT == "workflow_dispatch":
+        if is_alive:
+            status_text = "🟢 *PSN Access Active*"
+        else:
+            status_text = "🚨 *PSN Access REVOKED*"
+
         send_telegram(
             f"🔎 *Manual Check*\n\n"
             f"Latest OFW: `{latest_ofw}`\n"
             f"Still Alive: `{', '.join(set(alive_fws))}`\n"
-            f"Target FW `{TARGET_FW}` status: 🟢 *PSN Access Active*"
+            f"Target FW `{TARGET_FW}` status: {status_text}"
         )
         return
 
-    # 2. Convert UTC to exact India Standard Time (IST = UTC + 5h 30m)
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    ist_offset = datetime.timedelta(hours=5, minutes=30)
-    now_ist = now_utc + ist_offset
+    # 2. Automated Scheduled Check
+    # If access is revoked, trigger an emergency alert immediately
+    if not is_alive:
+        send_telegram(
+            f"🚨 *CRITICAL ALERT: PSN ACCESS REVOKED* 🚨\n\n"
+            f"Target FW *{TARGET_FW}* has been dropped from PSN!\n"
+            f"Latest OFW: `{latest_ofw}`\n"
+            f"Active FW: `{', '.join(set(alive_fws))}`"
+        )
+        return
 
-    # Target hours in IST: 5:00 AM, 11:00 AM, 5:00 PM (17), 11:00 PM (23)
+    # 3. Scheduled Heartbeat (5:00 AM, 11:00 AM, 5:00 PM, 11:00 PM IST)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
     target_ist_hours = [5, 11, 17, 23]
 
-    # Read the last hour we sent a notification for to prevent duplicate alerts
     last_notified = ""
     if os.path.exists(STATE_FILE):
         try:
@@ -83,8 +101,6 @@ def main():
                 f.write(current_hour_key)
         except Exception:
             pass
-    else:
-        print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] Background check completed silently.")
 
 if __name__ == "__main__":
     main()
