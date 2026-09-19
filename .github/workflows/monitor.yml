@@ -30,38 +30,23 @@ jobs:
           LATEST="$(echo "$FW_DATA" | grep -oE '[0-9]+\.[0-9]+\.00' | sort -V | tail -1 || true)"
           LATEST="${LATEST:-unknown}"
 
-          # Sony's status page is JavaScript-rendered, so searching the HTML
-          # for a sentence such as "All services are up and running" is unreliable.
-          # Use Sony's underlying regional JSON status feeds instead.
-          PSN_GENERAL="UNKNOWN"
-          PSN_COUNTS=""
+          # India is in Sony's SCEE region. Read the official regional
+          # JSON feed instead of scraping the JavaScript status webpage.
+          PSN_JSON="$(curl -fsSL --max-time 20 \
+            "https://status.playstation.com/data/statuses/region/SCEE.json" || true)"
 
-          for REGION in SCEE SCEA SCEJ; do
-            REGION_JSON="$(curl -fsSL --max-time 20 \
-              "https://status.playstation.com/data/statuses/region/${REGION}.json" || true)"
-
-            if [ -z "$REGION_JSON" ]; then
-              continue
-            fi
-
-            COUNT="$(echo "$REGION_JSON" | jq -r '.status | length' 2>/dev/null || echo 999)"
-            PSN_COUNTS="${PSN_COUNTS}${REGION}=${COUNT} "
-
-            if [ "$COUNT" = "0" ]; then
-              if [ "$PSN_GENERAL" = "UNKNOWN" ]; then
-                PSN_GENERAL="ONLINE"
-              fi
-            else
-              PSN_GENERAL="ISSUE"
-            fi
-          done
-
-          # If Sony's feeds could not be read at all, say UNKNOWN rather than
-          # falsely reporting an outage.
-          if [ -z "$PSN_COUNTS" ]; then
+          if [ -z "$PSN_JSON" ]; then
             PSN_GENERAL="UNKNOWN"
+          else
+            ISSUE_COUNT="$(echo "$PSN_JSON" | jq -r '(.status // []) | length' 2>/dev/null || echo 999)"
+            if [ "$ISSUE_COUNT" = "0" ]; then
+              PSN_GENERAL="ONLINE"
+            elif [ "$ISSUE_COUNT" != "999" ]; then
+              PSN_GENERAL="ISSUE"
+            else
+              PSN_GENERAL="UNKNOWN"
+            fi
           fi
-
           # Look for the newest 13.60/PSN reports in the PS5 jailbreak
           # community. This is a signal only; it is NOT an official Sony test.
           REDDIT="$(curl -fsSL --max-time 20             -A 'PS5-Firmware-Monitor/1.0'             'https://www.reddit.com/r/PS5_Jailbreak/search.json?q=13.60%20PSN&restrict_sr=1&sort=new&t=day&limit=10' || true)"
