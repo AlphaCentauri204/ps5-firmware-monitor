@@ -39,62 +39,51 @@ def get_latest_ofw():
         print(f"Error querying Sony: {e}")
     return "14.00"
 
-def format_report(latest_ofw: str, alive_fws: list, title: str) -> str:
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    utc_str = now_utc.strftime("%Y-%m-%d %H:%M UTC")
-    alive_str = ", ".join(sorted(set(alive_fws)))
+def build_modern_card(title: str, latest_ofw: str, alive_fws: list, is_alive: bool) -> str:
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    alive_str = "  •  ".join(sorted(set(alive_fws)))
     
-    return (
-        f"{title}\n\n"
-        f"```text\n"
-        f"PS5\n"
-        f"latest fw: {latest_ofw} (built 2026-09-09, live 2026-09-15 00:44 UTC)\n"
-        f"checked: {utc_str}\n"
-        f"still alive fw: {alive_str}\n"
-        f"```\n"
-        f"Target FW `{TARGET_FW}`: 🟢 *PSN Access Active*"
+    status_badge = "🟢 ONLINE" if is_alive else "🔴 REVOKED"
+    status_msg = f"Firmware `{TARGET_FW}` is authorized." if is_alive else f"⚠️ Firmware `{TARGET_FW}` access terminated!"
+
+    card = (
+        f"*{title}*\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🎮 *PlayStation 5 Network*\n"
+        f"📡 Status: {status_badge}\n"
+        f"🕒 Checked: `{now_utc}`\n\n"
+        f"🔹 *Latest OFW:* `{latest_ofw}`\n"
+        f"✨ *Supported Firmwares:*\n`{alive_str}`\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 *Target:* `{TARGET_FW}` — {status_msg}"
     )
+    return card
 
 def main():
     latest_ofw = get_latest_ofw()
     alive_fws = ["13.60", latest_ofw]
     is_alive = TARGET_FW in alive_fws
 
-    # 1. Manual check on-demand (via "Run workflow" button)
+    # 1. Manual check on-demand (Run workflow button)
     if GITHUB_EVENT == "workflow_dispatch":
-        if is_alive:
-            report = format_report(latest_ofw, alive_fws, "🔎 *Manual PSN Check*")
-        else:
-            now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            report = (
-                f"🚨 *PSN ACCESS REVOKED* 🚨\n\n"
-                f"```text\n"
-                f"PS5\n"
-                f"latest fw: {latest_ofw}\n"
-                f"revoked: {now_utc}\n"
-                f"still alive fw: {', '.join(sorted(set(alive_fws)))}\n"
-                f"```\n"
-                f"Target FW `{TARGET_FW}` has lost PSN access!"
-            )
-        send_telegram(report)
+        send_telegram(build_modern_card("🔎 MANUAL AUDIT", latest_ofw, alive_fws, is_alive))
         return
 
     # 2. Critical Alert: Triggered immediately if 13.60 is dropped
     if not is_alive:
-        now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         send_telegram(
-            f"🚨 *CRITICAL ALERT: PSN ACCESS REVOKED* 🚨\n\n"
-            f"```text\n"
-            f"PS5\n"
-            f"latest fw: {latest_ofw}\n"
-            f"revocation detected: {now_utc}\n"
-            f"still alive fw: {', '.join(sorted(set(alive_fws)))}\n"
-            f"```\n"
+            f"🚨 *CRITICAL ALERT: PSN REVOCATION* 🚨\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"❌ *Target FW `{TARGET_FW}` has been dropped from PSN!*\n"
+            f"🕒 Timestamp: `{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`\n"
+            f"🔹 Latest OFW: `{latest_ofw}`\n"
+            f"🔹 Active FW: `{', '.join(sorted(set(alive_fws)))}`\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"⚠️ *Take your console offline immediately.*"
         )
         return
 
-    # 3. Once-a-day Morning Status at 6:30 AM IST (01:00 UTC)
+    # 3. Daily Morning Status at 6:30 AM IST (01:00 UTC)
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
 
@@ -109,8 +98,7 @@ def main():
                 pass
 
         if last_ping_date != today_date:
-            report = format_report(latest_ofw, alive_fws, "☀️ *Daily Morning PSN Check (6:30 AM IST)*")
-            send_telegram(report)
+            send_telegram(build_modern_card("☀️ MORNING STATUS", latest_ofw, alive_fws, is_alive))
             try:
                 with open(STATE_FILE, "w") as f:
                     f.write(today_date)
