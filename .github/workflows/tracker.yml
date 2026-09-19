@@ -2,9 +2,9 @@ name: PS5 Firmware Monitor
 
 on:
   schedule:
-    # Runs automatically every 12 hours (00:00 UTC and 12:00 UTC)
-    - cron: '0 0,12 * * *'
-  workflow_dispatch: # Enables the manual "Run workflow" button
+    # Runs every 30 minutes (stays completely within GitHub free limits)
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Manual test button
 
 jobs:
   check-fw:
