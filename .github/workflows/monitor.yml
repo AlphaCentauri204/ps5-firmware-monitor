@@ -64,7 +64,7 @@ jobs:
             echo "time=$TIME"
             echo "latest=$LATEST"
             echo "psn_general=$PSN_GENERAL"
-            echo "13_60_community=$COMMUNITY"
+            echo "community_13_60=$COMMUNITY"
           } >> "$GITHUB_OUTPUT"
 
       - name: Compare with previous status
@@ -99,7 +99,7 @@ jobs:
           PSN general status: ${{ steps.check.outputs.psn_general }}
 
           13.60 PSN-specific signal:
-          ${{ steps.check.outputs.13_60_community }}
+          ${{ steps.check.outputs.community_13_60 }}
 
           ⚠️ The 13.60 line is based on community reports, because Sony does not provide a public endpoint that directly reports PSN eligibility for a specific old firmware.
 
