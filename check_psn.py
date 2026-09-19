@@ -4,7 +4,7 @@ import datetime
 import requests
 import xml.etree.ElementTree as ET
 
-TARGET_FW = "13.60"
+TARGET_FW = "13.20"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
