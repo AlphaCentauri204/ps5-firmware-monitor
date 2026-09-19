@@ -30,14 +30,36 @@ jobs:
           LATEST="$(echo "$FW_DATA" | grep -oE '[0-9]+\.[0-9]+\.00' | sort -V | tail -1 || true)"
           LATEST="${LATEST:-unknown}"
 
-          # Sony's public PSN status page. This checks PSN generally,
-          # not whether Sony has specifically blocked firmware 13.60.
-          PSN_PAGE="$(curl -fsSL --max-time 20 'https://status.playstation.com/?smcid=pdc:en-us:ps5:primary+nav:msg-support:psn-status' || true)"
+          # Sony's status page is JavaScript-rendered, so searching the HTML
+          # for a sentence such as "All services are up and running" is unreliable.
+          # Use Sony's underlying regional JSON status feeds instead.
+          PSN_GENERAL="UNKNOWN"
+          PSN_COUNTS=""
 
-          if echo "$PSN_PAGE" | grep -qi "All services are up and running"; then
-            PSN_GENERAL="ONLINE"
-          else
-            PSN_GENERAL="ISSUE"
+          for REGION in SCEE SCEA SCEJ; do
+            REGION_JSON="$(curl -fsSL --max-time 20 \
+              "https://status.playstation.com/data/statuses/region/${REGION}.json" || true)"
+
+            if [ -z "$REGION_JSON" ]; then
+              continue
+            fi
+
+            COUNT="$(echo "$REGION_JSON" | jq -r '.status | length' 2>/dev/null || echo 999)"
+            PSN_COUNTS="${PSN_COUNTS}${REGION}=${COUNT} "
+
+            if [ "$COUNT" = "0" ]; then
+              if [ "$PSN_GENERAL" = "UNKNOWN" ]; then
+                PSN_GENERAL="ONLINE"
+              fi
+            else
+              PSN_GENERAL="ISSUE"
+            fi
+          done
+
+          # If Sony's feeds could not be read at all, say UNKNOWN rather than
+          # falsely reporting an outage.
+          if [ -z "$PSN_COUNTS" ]; then
+            PSN_GENERAL="UNKNOWN"
           fi
 
           # Look for the newest 13.60/PSN reports in the PS5 jailbreak
