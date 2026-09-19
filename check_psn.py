@@ -5,7 +5,7 @@ import requests
 import xml.etree.ElementTree as ET
 
 # Set to "13.20" to test revocation alert, or "13.60" for real tracking
-TARGET_FW = "13.20"
+TARGET_FW = "12.70"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
