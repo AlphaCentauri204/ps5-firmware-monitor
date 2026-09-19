@@ -1,66 +1,55 @@
 import os
 import requests
+import xml.etree.ElementTree as ET
 
 TARGET_FW = "13.60"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Source URL where live PSN firmware access status is retrieved
-STATUS_URL = os.getenv("PSN_DATA_URL", "")
+# Official Sony live update checker XML endpoint
+SONY_CHECKER_URL = "https://fus01.ps5.update.playstation.net/update/ps5/official/data/action/latest_checker.xml"
 
 def send_telegram(text: str):
     if not BOT_TOKEN or not CHAT_ID:
-        print("Telegram BOT_TOKEN or CHAT_ID is missing!")
-        return False
+        print("Telegram credentials missing.")
+        return
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
         "parse_mode": "Markdown"
     }
-    try:
-        res = requests.post(url, json=payload, timeout=10)
-        print(f"Telegram response status: {res.status_code}, response: {res.text}")
-        return res.status_code == 200
-    except Exception as e:
-        print(f"Failed to post to Telegram: {e}")
-        return False
+    requests.post(url, json=payload, timeout=10)
 
-def check():
-    # If no custom URL is provided yet, run a test ping to verify your bot
-    if not STATUS_URL or "example" in STATUS_URL:
-        print("No live STATUS_URL configured. Sending test ping...")
-        send_telegram(
-            f"✅ *PSN Tracker Connected!*\n\n"
-            f"Your bot is actively running.\n"
-            f"Currently monitoring target firmware: `{TARGET_FW}`\n\n"
-            f"_Reply with your source feed/channel link to activate live checking._"
-        )
-        return
-
+def check_sony_status():
+    headers = {
+        "User-Agent": "PlayStation 5"
+    }
     try:
-        response = requests.get(STATUS_URL, timeout=15)
+        response = requests.get(SONY_CHECKER_URL, headers=headers, timeout=15)
         response.raise_for_status()
-        data = response.json()
 
-        alive_list = [str(x).strip() for x in data.get("alive", [])]
-        latest_fw = data.get("latest", "Unknown")
+        root = ET.fromstring(response.text)
+        system_pup = root.find(".//system_pup")
+        
+        if system_pup is None:
+            print("System PUP node not found in XML response.")
+            return
 
-        if TARGET_FW not in alive_list:
-            message = (
-                f"🚨 *PSN ACCESS REVOKED* 🚨\n\n"
-                f"Firmware *{TARGET_FW}* has been dropped from PSN!\n"
-                f"Latest FW: `{latest_fw}`\n"
-                f"Still alive FW: `{', '.join(alive_list)}`"
-            )
-            send_telegram(message)
-            print(f"Alert dispatched: {TARGET_FW} is dropped.")
-        else:
-            print(f"Firmware {TARGET_FW} is still alive on PSN.")
+        # Read version metadata from Sony's manifest
+        sub_ver = system_pup.findtext("level2_sub_ver", default="").strip()
+        label = system_pup.findtext("level2_label", default="Unknown").strip()
+
+        print(f"Queried Sony FUS: Latest PUP Label = {label}, Sub-Ver = {sub_ver}")
+
+        # If a mandatory cut-off or deprecation flag is confirmed
+        # You can track version boundaries or alert when Sony enforces 14.00+
+        if "14.00" in label and TARGET_FW not in label:
+            print(f"Firmware {TARGET_FW} is in grace period under OFW {label}.")
 
     except Exception as e:
-        print(f"Error checking status: {e}")
+        print(f"Error querying Sony servers: {e}")
 
 if __name__ == "__main__":
-    check()
+    check_sony_status()
