@@ -30,22 +30,22 @@ jobs:
           LATEST="$(echo "$FW_DATA" | grep -oE '[0-9]+\.[0-9]+\.00' | sort -V | tail -1 || true)"
           LATEST="${LATEST:-unknown}"
 
-          # India is in Sony's SCEE region. Read the official regional
-          # JSON feed instead of scraping the JavaScript status webpage.
+          # Sony's regional feed can contain data that is not a simple
+          # "online/offline" flag. Use an independent live PSN probe for
+          # the general PSN availability signal, and keep Sony's page
+          # separate so we do not turn parsing quirks into a fake outage.
           PSN_JSON="$(curl -fsSL --max-time 20 \
-            "https://status.playstation.com/data/statuses/region/SCEE.json" || true)"
+            "https://realuptime.io/api/v1/outages/playstation-network" || true)"
 
           if [ -z "$PSN_JSON" ]; then
             PSN_GENERAL="UNKNOWN"
           else
-            ISSUE_COUNT="$(echo "$PSN_JSON" | jq -r '(.status // []) | length' 2>/dev/null || echo 999)"
-            if [ "$ISSUE_COUNT" = "0" ]; then
-              PSN_GENERAL="ONLINE"
-            elif [ "$ISSUE_COUNT" != "999" ]; then
-              PSN_GENERAL="ISSUE"
-            else
-              PSN_GENERAL="UNKNOWN"
-            fi
+            VERDICT="$(echo "$PSN_JSON" | jq -r '.verdict // empty' 2>/dev/null || true)"
+            case "$VERDICT" in
+              operational) PSN_GENERAL="ONLINE" ;;
+              degraded|down) PSN_GENERAL="ISSUE" ;;
+              *) PSN_GENERAL="UNKNOWN" ;;
+            esac
           fi
           # Look for the newest 13.60/PSN reports in the PS5 jailbreak
           # community. This is a signal only; it is NOT an official Sony test.
@@ -98,7 +98,7 @@ jobs:
 
           Latest firmware: ${{ steps.check.outputs.latest }}
 
-          Sony PSN status page: ${{ steps.check.outputs.psn_general }}
+          PSN general status: ${{ steps.check.outputs.psn_general }}
 
           13.60 PSN-specific signal:
           ${{ steps.check.outputs.community_13_60 }}
