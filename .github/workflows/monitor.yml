@@ -27,12 +27,8 @@ jobs:
           # Current official/community firmware list.
           FW_DATA="$(curl -fsSL --max-time 20             https://raw.githubusercontent.com/MewX/ps5-official-firmware-list/main/README.md)"
 
-          if echo "$FW_DATA" | grep -qE '\| 14\.00\.00 \|'; then
-            LATEST="14.00"
-          else
-            LATEST="$(echo "$FW_DATA" | grep -oE '\| [0-9]+\.[0-9]+\.00 \|' | head -1 | tr -d '| ' || true)"
-            LATEST="${LATEST:-unknown}"
-          fi
+          LATEST="$(echo "$FW_DATA" | grep -oE '[0-9]+\.[0-9]+\.00' | sort -V | tail -1 || true)"
+          LATEST="${LATEST:-unknown}"
 
           # Sony's public PSN status page. This checks PSN generally,
           # not whether Sony has specifically blocked firmware 13.60.
@@ -51,8 +47,7 @@ jobs:
           COMMUNITY="UNKNOWN"
           if echo "$REDDIT" | grep -Eqi 'still (works|working|online)|still.*PSN|PSN.*still|can still connect|still connect'; then
             COMMUNITY="ONLINE_REPORTS"
-          fi
-          if echo "$REDDIT" | grep -Eqi 'PSN.*(offline|down|shutdown|stopped)|13\.60.*(offline|down|shutdown|stopped)|no longer.*PSN|PSN.*no longer|lost PSN'; then
+          elif echo "$REDDIT" | grep -Eqi 'PSN.*(offline|down|shutdown|stopped)|13\.60.*(offline|down|shutdown|stopped)|no longer.*PSN|PSN.*no longer|lost PSN'; then
             COMMUNITY="OFFLINE_REPORTS"
           fi
 
@@ -96,7 +91,7 @@ jobs:
 
           Latest firmware: ${{ steps.check.outputs.latest }}
 
-          PSN general status: ${{ steps.check.outputs.psn_general }}
+          Sony PSN status page: ${{ steps.check.outputs.psn_general }}
 
           13.60 PSN-specific signal:
           ${{ steps.check.outputs.community_13_60 }}
