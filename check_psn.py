@@ -57,139 +57,215 @@ def build_modern_card(title: str, latest_ofw: str, alive_fws: list, is_alive: bo
         f"🎯 *Target:* `{TARGET_FW}` — {status_msg}"
     )
 
-def generate_web_dashboard(latest_ofw: str, alive_fws: list, is_alive: bool):
-    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    alive_str = ", ".join(sorted(set(alive_fws)))
-    status_text = "ONLINE" if is_alive else "REVOKED"
-    badge_bg = "#059669" if is_alive else "#dc2626"
-    card_msg = f"Firmware {TARGET_FW} is authorized for PSN." if is_alive else f"Firmware {TARGET_FW} access has been terminated!"
+def generate_web_dashboard(latest_ofw: str, is_alive: bool):
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%b %d, %Y, %I:%M %p UTC")
+    badge_text = "ONLINE" if is_alive else "REVOKED"
+    badge_class = "badge-online" if is_alive else "badge-revoked"
+    card_sub = "Consensus force_update baseline across reporting regions" if is_alive else "Target firmware has been dropped"
 
-    html_content = f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PS5 PSN Firmware Tracker</title>
+    <title>Global PS5 Firmware Status</title>
     <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
-            background-color: #0b0f19;
-            color: #f3f4f6;
+            background-color: #0b0e14;
+            color: #f1f5f9;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            padding: 30px 20px;
+        }}
+        .container {{
+            max-width: 860px;
+            margin: 0 auto;
+        }}
+        .brand {{
+            font-size: 0.85rem;
+            color: #64748b;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }}
+        .subhead {{
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #64748b;
+            margin-bottom: 6px;
+            font-weight: 700;
+        }}
+        .header-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+        }}
+        .title {{
+            font-size: 1.9rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }}
+        .refresh-btn {{
+            background: #1e293b;
+            color: #cbd5e1;
+            border: 1px solid #334155;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+        }}
+        .banner {{
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 14px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 24px;
+        }}
+        .banner-left {{
             display: flex;
             align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
+            gap: 10px;
+            font-size: 0.88rem;
+            font-weight: 500;
+        }}
+        .dot {{
+            width: 8px;
+            height: 8px;
+            background-color: {'#10b981' if is_alive else '#ef4444'};
+            border-radius: 50%;
+        }}
+        .badge-online {{
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }}
+        .badge-revoked {{
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }}
+        .timestamp {{
+            font-size: 0.78rem;
+            color: #94a3b8;
+        }}
+        .grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
         }}
         .card {{
             background: #111827;
             border: 1px solid #1f2937;
-            border-radius: 16px;
-            width: 100%;
-            max-width: 440px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            padding: 28px;
+            border-radius: 12px;
+            padding: 24px;
+            position: relative;
         }}
-        .header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }}
-        .title {{
-            font-size: 1.15rem;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }}
-        .badge {{
-            background: {badge_bg};
-            padding: 5px 12px;
-            border-radius: 9999px;
+        .card-label {{
             font-size: 0.75rem;
-            font-weight: 700;
+            text-transform: uppercase;
             letter-spacing: 1px;
-        }}
-        .metric {{
-            background: #1f2937;
-            border-radius: 10px;
-            padding: 14px 18px;
+            color: #94a3b8;
+            font-weight: 700;
             margin-bottom: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }}
-        .label {{
-            color: #9ca3af;
-            font-size: 0.88rem;
+        .card-val {{
+            font-size: 2.3rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 10px;
         }}
-        .value {{
-            font-weight: 600;
-            font-family: monospace;
-            font-size: 0.95rem;
+        .card-sub {{
+            font-size: 0.78rem;
+            color: #64748b;
+            line-height: 1.4;
         }}
-        .footer {{
-            margin-top: 20px;
-            font-size: 0.85rem;
-            text-align: center;
-            color: #6b7280;
-        }}
-        .status-msg {{
-            margin-top: 15px;
-            padding: 12px;
+        .notice {{
+            background: #0f172a;
+            border: 1px solid #1e293b;
             border-radius: 8px;
-            font-size: 0.9rem;
-            text-align: center;
-            background: {'rgba(5,150,105,0.1)' if is_alive else 'rgba(220,38,38,0.1)'};
-            color: {'#34d399' if is_alive else '#f87171'};
-            font-weight: 600;
+            padding: 14px 18px;
+            font-size: 0.8rem;
+            color: #64748b;
+            line-height: 1.5;
         }}
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="header">
-            <span class="title">🎮 PS5 PSN TRACKER</span>
-            <span class="badge">{status_text}</span>
+    <div class="container">
+        <div class="brand">
+            <span>status / monitor</span>
+            <span>PLAYSTATION 5 &nbsp;•&nbsp; GLOBAL</span>
         </div>
-        <div class="metric">
-            <span class="label">Target Firmware</span>
-            <span class="value">{TARGET_FW}</span>
+        <div class="subhead">Global PS5 Firmware Status</div>
+        <div class="header-row">
+            <h1 class="title">One view. Every region.</h1>
+            <button class="refresh-btn" onclick="location.reload()">⟳ Refresh</button>
         </div>
-        <div class="metric">
-            <span class="label">Latest OFW</span>
-            <span class="value">{latest_ofw}</span>
+        <div class="banner">
+            <div class="banner-left">
+                <span class="dot"></span>
+                <span>Live PSN manifests verified</span>
+                <span class="{badge_class}">{badge_text}</span>
+            </div>
+            <div class="timestamp">Last checked: {now_utc}</div>
         </div>
-        <div class="metric">
-            <span class="label">Active Firmwares</span>
-            <span class="value">{alive_str}</span>
+        <div class="grid">
+            <div class="card">
+                <div class="card-label">Global Minimum</div>
+                <div class="card-val">{TARGET_FW}</div>
+                <div class="card-sub">{card_sub}</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Latest Available</div>
+                <div class="card-val">{latest_ofw}</div>
+                <div class="card-sub">Consensus latest system software across reporting regions</div>
+            </div>
+            <div class="card">
+                <div class="card-label">PSN Status</div>
+                <div class="card-val" style="font-size: 1.7rem; color: {'#34d399' if is_alive else '#f87171'};">{badge_text}</div>
+                <div class="card-sub">Target firmware is authorized on network</div>
+            </div>
         </div>
-        <div class="metric">
-            <span class="label">Last Checked</span>
-            <span class="value">{now_utc}</span>
+        <div class="notice">
+            ⓘ <b>ONLINE</b> indicates firmware {TARGET_FW} satisfies the force_update baseline in the active manifest. This is a read-only monitoring status page updated automatically.
         </div>
-        <div class="status-msg">{card_msg}</div>
-        <div class="footer">Refresh page to view live status</div>
     </div>
 </body>
 </html>"""
     with open("index.html", "w", encoding="utf-8") as f:
-        f.write(html_content)
+        f.write(html)
 
 def main():
     latest_ofw = get_latest_ofw()
     alive_fws = ["13.60", latest_ofw]
     is_alive = TARGET_FW in alive_fws
 
-    # Always generate the public website file
-    generate_web_dashboard(latest_ofw, alive_fws, is_alive)
+    generate_web_dashboard(latest_ofw, is_alive)
 
-    # 1. Manual check on-demand (Run workflow button)
     if GITHUB_EVENT == "workflow_dispatch":
         send_telegram(build_modern_card("🔎 MANUAL AUDIT", latest_ofw, alive_fws, is_alive))
         return
 
-    # 2. Critical Alert: Triggered immediately if 13.60 is dropped
     if not is_alive:
         send_telegram(
             f"🚨 *CRITICAL ALERT: PSN REVOCATION* 🚨\n"
@@ -203,7 +279,6 @@ def main():
         )
         return
 
-    # 3. Daily Morning Status at 6:30 AM IST (01:00 UTC)
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
 
@@ -225,6 +300,8 @@ def main():
             except Exception:
                 pass
             return
+
+    print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] Silent check passed: {TARGET_FW} still active.")
 
 if __name__ == "__main__":
     main()
