@@ -42,11 +42,10 @@ def get_latest_ofw():
 def build_modern_card(title: str, latest_ofw: str, alive_fws: list, is_alive: bool) -> str:
     now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     alive_str = "  •  ".join(sorted(set(alive_fws)))
-    
     status_badge = "🟢 ONLINE" if is_alive else "🔴 REVOKED"
     status_msg = f"Firmware `{TARGET_FW}` is authorized." if is_alive else f"⚠️ Firmware `{TARGET_FW}` access terminated!"
 
-    card = (
+    return (
         f"*{title}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🎮 *PlayStation 5 Network*\n"
@@ -57,12 +56,133 @@ def build_modern_card(title: str, latest_ofw: str, alive_fws: list, is_alive: bo
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🎯 *Target:* `{TARGET_FW}` — {status_msg}"
     )
-    return card
+
+def generate_web_dashboard(latest_ofw: str, alive_fws: list, is_alive: bool):
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    alive_str = ", ".join(sorted(set(alive_fws)))
+    status_text = "ONLINE" if is_alive else "REVOKED"
+    badge_bg = "#059669" if is_alive else "#dc2626"
+    card_msg = f"Firmware {TARGET_FW} is authorized for PSN." if is_alive else f"Firmware {TARGET_FW} access has been terminated!"
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PS5 PSN Firmware Tracker</title>
+    <style>
+        body {{
+            background-color: #0b0f19;
+            color: #f3f4f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }}
+        .card {{
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 440px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            padding: 28px;
+        }}
+        .header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }}
+        .title {{
+            font-size: 1.15rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }}
+        .badge {{
+            background: {badge_bg};
+            padding: 5px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }}
+        .metric {{
+            background: #1f2937;
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .label {{
+            color: #9ca3af;
+            font-size: 0.88rem;
+        }}
+        .value {{
+            font-weight: 600;
+            font-family: monospace;
+            font-size: 0.95rem;
+        }}
+        .footer {{
+            margin-top: 20px;
+            font-size: 0.85rem;
+            text-align: center;
+            color: #6b7280;
+        }}
+        .status-msg {{
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            text-align: center;
+            background: {'rgba(5,150,105,0.1)' if is_alive else 'rgba(220,38,38,0.1)'};
+            color: {'#34d399' if is_alive else '#f87171'};
+            font-weight: 600;
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <span class="title">🎮 PS5 PSN TRACKER</span>
+            <span class="badge">{status_text}</span>
+        </div>
+        <div class="metric">
+            <span class="label">Target Firmware</span>
+            <span class="value">{TARGET_FW}</span>
+        </div>
+        <div class="metric">
+            <span class="label">Latest OFW</span>
+            <span class="value">{latest_ofw}</span>
+        </div>
+        <div class="metric">
+            <span class="label">Active Firmwares</span>
+            <span class="value">{alive_str}</span>
+        </div>
+        <div class="metric">
+            <span class="label">Last Checked</span>
+            <span class="value">{now_utc}</span>
+        </div>
+        <div class="status-msg">{card_msg}</div>
+        <div class="footer">Refresh page to view live status</div>
+    </div>
+</body>
+</html>"""
+    with open("index.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
 
 def main():
     latest_ofw = get_latest_ofw()
     alive_fws = ["13.60", latest_ofw]
     is_alive = TARGET_FW in alive_fws
+
+    # Always generate the public website file
+    generate_web_dashboard(latest_ofw, alive_fws, is_alive)
 
     # 1. Manual check on-demand (Run workflow button)
     if GITHUB_EVENT == "workflow_dispatch":
@@ -77,7 +197,7 @@ def main():
             f"❌ *Target FW `{TARGET_FW}` has been dropped from PSN!*\n"
             f"🕒 Timestamp: `{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`\n"
             f"🔹 Latest OFW: `{latest_ofw}`\n"
-            f"🔹 Active FW: `{', '.join(sorted(set(alive_fws)))}`\n"
+            f"🔹 Active FW: `{', '.join(sorted(set(alive_fws)))}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"⚠️ *Take your console offline immediately.*"
         )
@@ -105,8 +225,6 @@ def main():
             except Exception:
                 pass
             return
-
-    print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] Silent check passed: {TARGET_FW} still active.")
 
 if __name__ == "__main__":
     main()
