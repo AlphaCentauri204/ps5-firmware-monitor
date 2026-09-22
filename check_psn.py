@@ -213,7 +213,7 @@ def generate_web_dashboard(latest_ofw: str, is_alive: bool):
 <body>
     <div class="container">
         <div class="brand">
-            <span>status / monitor</span>
+            <span>Alpha_Centauri204</span>
             <span>PLAYSTATION 5 &nbsp;•&nbsp; GLOBAL</span>
         </div>
         <div class="subhead">Global PS5 Firmware Status</div>
