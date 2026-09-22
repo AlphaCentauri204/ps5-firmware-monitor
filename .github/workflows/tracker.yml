@@ -2,12 +2,23 @@ name: PS5 Firmware Monitor
 
 on:
   schedule:
-    # Runs every 30 minutes (stays completely within GitHub free limits)
     - cron: '*/30 * * * *'
-  workflow_dispatch: # Manual test button
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  check-fw:
+  check-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -21,9 +32,22 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Run Script
+      - name: Run Tracker & Generate Site
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: python check_psn.py
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        
