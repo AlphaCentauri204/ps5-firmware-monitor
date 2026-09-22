@@ -11,8 +11,13 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GITHUB_EVENT = os.getenv("GITHUB_EVENT_NAME", "")
 STATE_FILE = "last_morning_ping.txt"
 
-SLOPCHECK_URL = "https://slopcheck.brisk-shell-7489.chatgpt.site/"
-SONY_CHECKER_URL = "https://fus01.ps5.update.playstation.net/update/ps5/official/data/action/latest_checker.xml"
+# Official Sony regional update CDNs
+SONY_ENDPOINTS = {
+    "US": "https://fus01.ps5.update.playstation.net/update/ps5/official/data/action/latest_checker.xml",
+    "EU": "https://fue01.ps5.update.playstation.net/update/ps5/official/data/action/latest_checker.xml",
+    "JP": "https://fjp01.ps5.update.playstation.net/update/ps5/official/data/action/latest_checker.xml",
+    "ASIA": "https://fsa01.ps5.update.playstation.net/update/ps5/official/data/action/latest_checker.xml"
+}
 
 def send_telegram(text: str):
     if not BOT_TOKEN or not CHAT_ID:
@@ -28,85 +33,54 @@ def send_telegram(text: str):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-def get_official_sony_ofw():
-    try:
-        headers = {"User-Agent": "PlayStation 5", "Connection": "close"}
-        r = requests.get(SONY_CHECKER_URL, headers=headers, timeout=6)
-        if r.status_code == 200:
-            root = ET.fromstring(r.text)
-            label = root.findtext(".//level2_label")
-            if label:
-                matches = re.findall(r'\b(\d{1,2}\.\d{2})\b', label)
-                if matches:
-                    return matches[0]
-    except Exception as e:
-        print(f"Sony direct query error: {e}")
-    return "14.00"
+def check_official_sony():
+    headers = {"User-Agent": "PlayStation 5", "Connection": "close"}
+    region_results = {}
 
-def fetch_live_status():
-    latest_ofw = get_official_sony_ofw()
-    global_min = TARGET_FW
-    agreement = "8/8"
-    is_alive = True
+    for region, url in SONY_ENDPOINTS.items():
+        try:
+            r = requests.get(url, headers=headers, timeout=6)
+            if r.status_code == 200:
+                root = ET.fromstring(r.text)
+                label = root.findtext(".//level2_label")
+                if label:
+                    # Clean extraction of firmware format (e.g. 14.00)
+                    matches = re.findall(r'\b(\d{1,2}\.\d{2})\b', label)
+                    if matches:
+                        region_results[region] = matches[0]
+        except Exception as e:
+            print(f"Failed query for {region}: {e}")
 
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(SLOPCHECK_URL, headers=headers, timeout=8)
-        if r.status_code == 200:
-            text = r.text
-            
-            # Match 8/8 or similar region agreement cleanly
-            agree_m = re.search(r'(\d+/\d+)\s*(?:available\s*)?regions', text, re.IGNORECASE)
-            if agree_m:
-                agreement = agree_m.group(1)
+    # Determine latest firmware reported across Sony's live servers
+    latest_versions = list(region_results.values())
+    latest_ofw = max(latest_versions) if latest_versions else "14.00"
+    reporting_count = f"{len(region_results)}/{len(SONY_ENDPOINTS)}"
 
-            # Check if global minimum has been shifted to 14.00 or higher
-            if "14.00" in text and "Consensus force_update" in text:
-                # If 14.00 is listed right near force_update baseline, it's revoked
-                check_min = re.search(r'GLOBAL\s*MINIMUM.*?([0-9]{2}\.[0-9]{2})', text, re.DOTALL | re.IGNORECASE)
-                if check_min and check_min.group(1) != "25.25":
-                    global_min = check_min.group(1)
-    except Exception as e:
-        print(f"Consensus tracker error: {e}")
+    return latest_ofw, reporting_count
 
-    # Accurate status verification
-    try:
-        is_alive = float(TARGET_FW) >= float(global_min)
-    except Exception:
-        is_alive = (TARGET_FW == global_min)
-
-    return latest_ofw, global_min, is_alive, agreement
-
-def build_modern_card(title: str, latest_ofw: str, global_min: str, is_alive: bool, agreement: str) -> str:
+def build_modern_card(title: str, latest_ofw: str, reporting_count: str) -> str:
     now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    status_badge = "🟢 ONLINE" if is_alive else "🔴 REVOKED"
-    status_msg = f"Firmware `{TARGET_FW}` is authorized." if is_alive else f"⚠️ Firmware `{TARGET_FW}` access terminated!"
 
     return (
         f"*{title}*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🎮 *PlayStation 5 Network*\n"
-        f"📡 Status: {status_badge}\n"
+        f"🎮 *Sony PS5 Manifest Status*\n"
         f"🕒 Checked: `{now_utc}`\n"
-        f"🌐 Regions reporting: `{agreement}`\n\n"
-        f"🔹 *Global Minimum:* `{global_min}`\n"
-        f"🔹 *Latest Available:* `{latest_ofw}`\n"
+        f"🌐 CDNs Responding: `{reporting_count}`\n\n"
+        f"🔹 *Published OFW:* `{latest_ofw}`\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🎯 *Target:* `{TARGET_FW}` — {status_msg}"
+        f"⚠️ Target FW `{TARGET_FW}`: Grace period status active until Sony revokes authorization."
     )
 
-def generate_web_dashboard(latest_ofw: str, global_min: str, is_alive: bool, agreement: str):
+def generate_web_dashboard(latest_ofw: str, reporting_count: str):
     now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%b %d, %Y, %I:%M %p UTC")
-    badge_text = "ONLINE" if is_alive else "REVOKED"
-    badge_class = "badge-online" if is_alive else "badge-revoked"
-    card_sub = "Consensus force_update baseline across reporting regions" if is_alive else "Target firmware has been dropped"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global PS5 Firmware Status</title>
+    <title>Official PS5 Firmware Manifest</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -140,12 +114,7 @@ def generate_web_dashboard(latest_ofw: str, global_min: str, is_alive: bool, agr
             align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 24px;
         }}
         .banner-left {{ display: flex; align-items: center; gap: 10px; font-size: 0.88rem; font-weight: 500; }}
-        .dot {{
-            width: 8px; height: 8px; border-radius: 50%;
-            background-color: {'#10b981' if is_alive else '#ef4444'};
-        }}
-        .badge-online {{ background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; }}
-        .badge-revoked {{ background: rgba(239, 68, 68, 0.15); color: #f87171; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; }}
+        .dot {{ width: 8px; height: 8px; border-radius: 50%; background-color: #10b981; }}
         .timestamp {{ font-size: 0.78rem; color: #94a3b8; }}
         .grid {{
             display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -167,41 +136,35 @@ def generate_web_dashboard(latest_ofw: str, global_min: str, is_alive: bool, agr
 <body>
     <div class="container">
         <div class="brand">
-            <span>Alpha_Centauri204</span>
-            <span>PLAYSTATION 5 &nbsp;•&nbsp; GLOBAL</span>
+            <span>DIRECT SONY CDN MONITOR</span>
+            <span>PLAYSTATION 5</span>
         </div>
-        <div class="subhead">Global PS5 Firmware Status</div>
+        <div class="subhead">Official Manifest Status</div>
         <div class="header-row">
-            <h1 class="title">One view. Every region.</h1>
+            <h1 class="title">Direct Server Feed</h1>
             <button class="refresh-btn" onclick="location.reload()">⟳ Refresh</button>
         </div>
         <div class="banner">
             <div class="banner-left">
                 <span class="dot"></span>
-                <span>Live PSN manifests verified ({agreement} regions agree)</span>
-                <span class="{badge_class}">{badge_text}</span>
+                <span>Verified against official Sony endpoints ({reporting_count} CDNs online)</span>
             </div>
             <div class="timestamp">Last checked: {now_utc}</div>
         </div>
         <div class="grid">
             <div class="card">
-                <div class="card-label">Global Minimum</div>
-                <div class="card-val">{global_min}</div>
-                <div class="card-sub">{card_sub}</div>
+                <div class="card-label">Target Firmware</div>
+                <div class="card-val">{TARGET_FW}</div>
+                <div class="card-sub">Current firmware under observation</div>
             </div>
             <div class="card">
-                <div class="card-label">Latest Available</div>
+                <div class="card-label">Published OFW</div>
                 <div class="card-val">{latest_ofw}</div>
-                <div class="card-sub">Consensus latest system software across reporting regions</div>
-            </div>
-            <div class="card">
-                <div class="card-label">PSN Status</div>
-                <div class="card-val" style="font-size: 1.7rem; color: {'#34d399' if is_alive else '#f87171'};">{badge_text}</div>
-                <div class="card-sub">Target firmware is {'authorized' if is_alive else 'revoked'}</div>
+                <div class="card-sub">Official build announced by Sony's update servers</div>
             </div>
         </div>
         <div class="notice">
-            ⓘ <b>{badge_text}</b> indicates firmware {TARGET_FW} status against the live regional manifests.
+            ⓘ Data queried directly from Sony PlayStation CDN servers without third-party intermediaries.
         </div>
     </div>
 </body>
@@ -210,27 +173,15 @@ def generate_web_dashboard(latest_ofw: str, global_min: str, is_alive: bool, agr
         f.write(html)
 
 def main():
-    latest_ofw, global_min, is_alive, agreement = fetch_live_status()
+    latest_ofw, reporting_count = check_official_sony()
 
-    generate_web_dashboard(latest_ofw, global_min, is_alive, agreement)
+    generate_web_dashboard(latest_ofw, reporting_count)
 
     if GITHUB_EVENT == "workflow_dispatch":
-        send_telegram(build_modern_card("🔎 MANUAL AUDIT", latest_ofw, global_min, is_alive, agreement))
+        send_telegram(build_modern_card("🔎 MANUAL AUDIT", latest_ofw, reporting_count))
         return
 
-    if not is_alive:
-        send_telegram(
-            f"🚨 *CRITICAL ALERT: PSN REVOCATION* 🚨\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"❌ *Target FW `{TARGET_FW}` has been dropped from PSN!*\n"
-            f"🕒 Timestamp: `{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`\n"
-            f"🔹 Global Minimum: `{global_min}`\n"
-            f"🔹 Latest Available: `{latest_ofw}`\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ *Take your console offline immediately.*"
-        )
-        return
-
+    # Daily morning update at 6:30 AM IST (01:00 UTC)
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
 
@@ -245,15 +196,13 @@ def main():
                 pass
 
         if last_ping_date != today_date:
-            send_telegram(build_modern_card("☀️ MORNING STATUS", latest_ofw, global_min, is_alive, agreement))
+            send_telegram(build_modern_card("☀️ MORNING STATUS", latest_ofw, reporting_count))
             try:
                 with open(STATE_FILE, "w") as f:
                     f.write(today_date)
             except Exception:
                 pass
             return
-
-    print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] Silent check passed: {TARGET_FW} still active.")
 
 if __name__ == "__main__":
     main()
