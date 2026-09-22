@@ -2,7 +2,6 @@ import os
 import re
 import datetime
 import requests
-from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 
 TARGET_FW = "13.60"
@@ -29,52 +28,48 @@ def send_telegram(text: str):
     except Exception as e:
         print(f"Telegram error: {e}")
 
+def get_official_sony_ofw():
+    try:
+        headers = {"User-Agent": "PlayStation 5", "Connection": "close"}
+        r = requests.get(SONY_CHECKER_URL, headers=headers, timeout=6)
+        if r.status_code == 200:
+            root = ET.fromstring(r.text)
+            label = root.findtext(".//level2_label")
+            if label:
+                matches = re.findall(r'\b(\d{1,2}\.\d{2})\b', label)
+                if matches:
+                    return matches[0]
+    except Exception as e:
+        print(f"Sony direct query error: {e}")
+    return "14.00"
+
 def fetch_live_status():
+    latest_ofw = get_official_sony_ofw()
     global_min = TARGET_FW
-    latest_ofw = "14.00"
     agreement = "8/8"
     is_alive = True
-    parsed_slopcheck = False
 
-    # 1. Fetch genuine consensus from Slopcheck
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     try:
+        headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(SLOPCHECK_URL, headers=headers, timeout=8)
         if r.status_code == 200:
             text = r.text
-            # Extract Global Minimum
-            min_match = re.search(r'GLOBAL\s*MINIMUM.*?(\d{2}\.\d{2})', text, re.DOTALL | re.IGNORECASE)
-            if min_match:
-                global_min = min_match.group(1)
-                parsed_slopcheck = True
+            
+            # Match 8/8 or similar region agreement cleanly
+            agree_m = re.search(r'(\d+/\d+)\s*(?:available\s*)?regions', text, re.IGNORECASE)
+            if agree_m:
+                agreement = agree_m.group(1)
 
-            # Extract Latest Available
-            latest_match = re.search(r'LATEST\s*AVAILABLE.*?(\d{2}\.\d{2})', text, re.DOTALL | re.IGNORECASE)
-            if latest_match:
-                latest_ofw = latest_match.group(1)
-
-            # Extract Regions Agreement (e.g. 8/8)
-            agree_match = re.search(r'(\d+/\d+)\s*(?:available\s*)?regions', text, re.IGNORECASE)
-            if agree_match:
-                agreement = agree_match.group(1)
+            # Check if global minimum has been shifted to 14.00 or higher
+            if "14.00" in text and "Consensus force_update" in text:
+                # If 14.00 is listed right near force_update baseline, it's revoked
+                check_min = re.search(r'GLOBAL\s*MINIMUM.*?([0-9]{2}\.[0-9]{2})', text, re.DOTALL | re.IGNORECASE)
+                if check_min and check_min.group(1) != "25.25":
+                    global_min = check_min.group(1)
     except Exception as e:
-        print(f"Slopcheck query notice: {e}")
+        print(f"Consensus tracker error: {e}")
 
-    # 2. Fallback to official Sony CDN directly for latest OFW if slopcheck times out
-    if not parsed_slopcheck:
-        try:
-            r = requests.get(SONY_CHECKER_URL, headers={"User-Agent": "PlayStation 5"}, timeout=5)
-            if r.status_code == 200:
-                root = ET.fromstring(r.text)
-                label = root.findtext(".//level2_label")
-                if label:
-                    clean_ver = re.findall(r'(\d{2}\.\d{2})', label)
-                    if clean_ver:
-                        latest_ofw = clean_ver[0]
-        except Exception as e:
-            print(f"Sony CDN query notice: {e}")
-
-    # True logic: Target is dead when the Global Minimum required moves to 14.00
+    # Accurate status verification
     try:
         is_alive = float(TARGET_FW) >= float(global_min)
     except Exception:
@@ -172,7 +167,7 @@ def generate_web_dashboard(latest_ofw: str, global_min: str, is_alive: bool, agr
 <body>
     <div class="container">
         <div class="brand">
-            <span>ALPHA CENTAURI</span>
+            <span>Alpha_Centauri204</span>
             <span>PLAYSTATION 5 &nbsp;•&nbsp; GLOBAL</span>
         </div>
         <div class="subhead">Global PS5 Firmware Status</div>
@@ -217,15 +212,12 @@ def generate_web_dashboard(latest_ofw: str, global_min: str, is_alive: bool, agr
 def main():
     latest_ofw, global_min, is_alive, agreement = fetch_live_status()
 
-    # Always publish to the public dashboard
     generate_web_dashboard(latest_ofw, global_min, is_alive, agreement)
 
-    # 1. On-Demand manual test (Run workflow button)
     if GITHUB_EVENT == "workflow_dispatch":
         send_telegram(build_modern_card("🔎 MANUAL AUDIT", latest_ofw, global_min, is_alive, agreement))
         return
 
-    # 2. EMERGENCY TRIGGER: Fires immediately when 13.60 is dropped
     if not is_alive:
         send_telegram(
             f"🚨 *CRITICAL ALERT: PSN REVOCATION* 🚨\n"
@@ -239,7 +231,6 @@ def main():
         )
         return
 
-    # 3. Daily morning update at 6:30 AM IST (01:00 UTC)
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
 
